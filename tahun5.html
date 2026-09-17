@@ -110,8 +110,9 @@
         Jawapan betul memberi mata dan syiling bonus.
       </p>
       <p>Elakkan musuh dari sisi. Lompat di atas musuh untuk memusnahkannya.</p>
-      <p><b>Masa permainan: 5 minit.</b> Ranking Top 10 disimpan pada PC/pelayar ini.</p>
+      <p><b>Masa permainan: 5 minit.</b> Ranking Top 10 sekolah dibaca daripada Google Sheets. Salinan tempatan turut disimpan sebagai sandaran.</p>
       <input id="playerNameInput" class="nameInput" maxlength="20" placeholder="Masukkan nama murid" autocomplete="off">
+      <input id="classInput" class="nameInput" maxlength="20" placeholder="Masukkan kelas (contoh: Tahun 4 Bestari)" autocomplete="off">
       <button id="startBtn">Mula Permainan</button>
       <button id="showRankingBtn">Ranking Top 10</button>
       <div class="small">C.A.M.U.S Games • Tahun 5 • Cikgu Johnny S • Panitia Pendidikan Muzik SK Rimbaan</div>
@@ -159,7 +160,7 @@
 
   <div id="rankingScreen" class="overlay hidden">
     <div class="panel">
-      <h1>RANKING TOP 10</h1>
+      <h1>RANKING TOP 10 SEKOLAH</h1>
       <h2>C.A.M.U.S Games • Tahun 5</h2>
       <div id="rankingContent"></div>
       <button id="closeRankingBtn">Tutup Ranking</button>
@@ -210,7 +211,8 @@
     timeUpCoins: document.getElementById("timeUpCoins"),
     ranking: document.getElementById("rankingScreen"),
     rankingContent: document.getElementById("rankingContent"),
-    nameInput: document.getElementById("playerNameInput")
+    nameInput: document.getElementById("playerNameInput"),
+    classInput: document.getElementById("classInput")
   };
 
   const keys = {left:false,right:false,jump:false};
@@ -225,8 +227,17 @@
   let activeQuestionBlock = null;
   let usedQuestionIds = new Set();
   let playerName = "Murid";
+  let playerClass = "";
+  let answeredCount = 0;
+  let correctCount = 0;
+  let wrongCount = 0;
+  const GAME_YEAR = 5;
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyI9qWbr8yrUuuePrnKN-hHJF4XqGBEiHxZUBVq80ZEh95MrYD05kltnNr2lFOOFagW/exec";
   let timeRemaining = 300;
   let resultSaved = false;
+    answeredCount = 0;
+    correctCount = 0;
+    wrongCount = 0;
   let previousStateBeforeRanking = "start";
   const RANKING_KEY = "superMuzikRankingT5";
 
@@ -398,9 +409,14 @@
     resultSaved = true;
     const entry = {
       name: playerName || "Murid",
+      className: playerClass || "",
       score: score,
       coins: coins,
       timeLeft: Math.max(0, Math.ceil(timeRemaining)),
+      answered: answeredCount,
+      correct: correctCount,
+      wrong: wrongCount,
+      accuracy: answeredCount ? (correctCount/answeredCount*100) : 0,
       result: resultLabel,
       date: new Date().toLocaleDateString("ms-MY")
     };
@@ -409,20 +425,100 @@
     list.sort((a,b)=> (b.score-a.score) || (b.coins-a.coins) || (b.timeLeft-a.timeLeft) || String(a.name).localeCompare(String(b.name)));
     const top10 = list.slice(0,10);
     try{ localStorage.setItem(RANKING_KEY, JSON.stringify(top10)); }catch(e){}
+    submitOnlineResult(resultLabel);
+  }
+
+  function submitOnlineResult(resultLabel){
+    if(WEB_APP_URL.includes("PASTE_GOOGLE_APPS_SCRIPT")) return;
+    const params = new URLSearchParams();
+    params.set("action","submit");
+    params.set("year",String(GAME_YEAR));
+    params.set("name",playerName || "Murid");
+    params.set("className",playerClass || "");
+    params.set("score",String(score));
+    params.set("coins",String(coins));
+    params.set("timeMs",String(Math.max(0, Math.round((300-timeRemaining)*1000))));
+    params.set("timeDisplay",formatTime(300-timeRemaining));
+    params.set("answered",String(answeredCount));
+    params.set("correct",String(correctCount));
+    params.set("wrong",String(wrongCount));
+    params.set("accuracy",String(answeredCount ? (correctCount/answeredCount*100) : 0));
+    params.set("result",resultLabel);
+    params.set("source","GitHub Pages");
+    fetch(WEB_APP_URL,{
+      method:"POST",
+      mode:"no-cors",
+      headers:{"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8"},
+      body:params.toString(),
+      keepalive:true
+    }).catch(()=>{});
   }
 
   function renderRanking(){
-    const list = getRanking();
-    if(list.length===0){
-      ui.rankingContent.innerHTML = "<p>Belum ada rekod. Jadilah pemain pertama!</p>";
+    ui.rankingContent.innerHTML = "<p>Memuatkan Ranking Top 10 sekolah...</p>";
+    if(WEB_APP_URL.includes("PASTE_GOOGLE_APPS_SCRIPT")){
+      renderLocalRanking();
+      return;
+    }
+    const cb = "camusRankCb_" + Date.now() + "_" + Math.floor(Math.random()*100000);
+    const script = document.createElement("script");
+    let finished = false;
+    window[cb] = function(payload){
+      finished = true;
+      try{
+        if(payload && payload.ok && Array.isArray(payload.ranking)){
+          renderRankingRows(payload.ranking);
+        }else{
+          renderLocalRanking();
+        }
+      }finally{
+        delete window[cb];
+        script.remove();
+      }
+    };
+    script.onerror = function(){
+      if(!finished){
+        renderLocalRanking();
+        delete window[cb];
+        script.remove();
+      }
+    };
+    script.src = WEB_APP_URL + "?action=ranking&year=" + encodeURIComponent(GAME_YEAR) + "&callback=" + encodeURIComponent(cb) + "&t=" + Date.now();
+    document.body.appendChild(script);
+    setTimeout(()=>{
+      if(!finished && window[cb]){
+        renderLocalRanking();
+        delete window[cb];
+        script.remove();
+      }
+    },5000);
+  }
+
+  function renderRankingRows(list){
+    if(!list || list.length===0){
+      ui.rankingContent.innerHTML = "<p>Belum ada rekod ranking sekolah untuk Tahun "+GAME_YEAR+".</p>";
       return;
     }
     let rows = "";
     list.slice(0,10).forEach((r,i)=>{
       const cls = i===0 ? "rank1" : (i===1 ? "rank2" : (i===2 ? "rank3" : ""));
-      rows += `<tr class="${cls}"><td>${i+1}</td><td>${escapeHtml(r.name)}</td><td>${r.score}</td><td>${r.coins}</td><td>${formatTime(r.timeLeft||0)}</td><td>${escapeHtml(r.result||"")}</td></tr>`;
+      rows += `<tr class="${cls}"><td>${i+1}</td><td>${escapeHtml(r.name||"")}</td><td>${escapeHtml(r.className||"")}</td><td>${Number(r.score||0)}</td><td>${Number(r.coins||0)}</td><td>${escapeHtml(r.timeDisplay||"")}</td><td>${Number(r.accuracy||0).toFixed(1)}%</td></tr>`;
     });
-    ui.rankingContent.innerHTML = `<table class="rankingTable"><thead><tr><th>Rank</th><th>Nama</th><th>Skor</th><th>Syiling</th><th>Baki Masa</th><th>Keputusan</th></tr></thead><tbody>${rows}</tbody></table>`;
+    ui.rankingContent.innerHTML = `<table class="rankingTable"><thead><tr><th>Rank</th><th>Nama</th><th>Kelas</th><th>Skor</th><th>Syiling</th><th>Masa</th><th>Ketepatan</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function renderLocalRanking(){
+    const list = getRanking();
+    if(list.length===0){
+      ui.rankingContent.innerHTML = "<p>Belum ada rekod. Sambungkan Google Apps Script untuk ranking sekolah.</p>";
+      return;
+    }
+    let rows = "";
+    list.slice(0,10).forEach((r,i)=>{
+      const cls = i===0 ? "rank1" : (i===1 ? "rank2" : (i===2 ? "rank3" : ""));
+      rows += `<tr class="${cls}"><td>${i+1}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.className||"")}</td><td>${r.score}</td><td>${r.coins}</td><td>${formatTime(r.timeLeft||0)}</td><td>${Number(r.accuracy||0).toFixed(1)}%</td></tr>`;
+    });
+    ui.rankingContent.innerHTML = `<p class="small"><b>Mod sandaran tempatan</b></p><table class="rankingTable"><thead><tr><th>Rank</th><th>Nama</th><th>Kelas</th><th>Skor</th><th>Syiling</th><th>Masa</th><th>Ketepatan</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   function escapeHtml(text){
@@ -445,6 +541,7 @@
       ui.victoryScore.textContent=score;
       ui.victoryCoins.textContent=coins;
       ui.victory.classList.remove("hidden");
+      setTimeout(()=>showRanking(),1200);
     }else if(kind==="timeup"){
       gameState="timeup";
       timeRemaining=0;
@@ -453,11 +550,13 @@
       ui.timeUpScore.textContent=score;
       ui.timeUpCoins.textContent=coins;
       ui.timeUp.classList.remove("hidden");
+      setTimeout(()=>showRanking(),1200);
     }else{
       gameState="gameover";
       saveRanking("Game Over");
       ui.finalScore.textContent=score;
       ui.gameOver.classList.remove("hidden");
+      setTimeout(()=>showRanking(),1200);
     }
   }
 
@@ -498,17 +597,20 @@
   function answerQuestion(index,clickedBtn){
     const buttons = [...ui.answers.querySelectorAll("button")];
     buttons.forEach(b=>b.disabled=true);
+    answeredCount++;
     if(index===activeQuestion.c){
       clickedBtn.classList.add("correct");
       ui.feedback.textContent = "Betul! +50 mata dan +1 syiling.";
       ui.feedback.style.color="#16833a";
       score += 50;
       coins += 1;
+      correctCount++;
     }else{
       clickedBtn.classList.add("wrong");
       buttons[activeQuestion.c].classList.add("correct");
       ui.feedback.textContent = "Belum tepat. Jawapan yang betul ditunjukkan.";
       ui.feedback.style.color="#b12b2b";
+      wrongCount++;
     }
     updateHUD();
     ui.continueBtn.classList.remove("hidden");
@@ -913,6 +1015,7 @@
   document.getElementById("startBtn").addEventListener("click",()=>{
     const entered = ui.nameInput.value.trim();
     playerName = entered ? entered.slice(0,20) : "Murid";
+    playerClass = ui.classInput.value.trim().slice(0,20);
     resetGame();
     ui.start.classList.add("hidden");
     gameState="playing";
@@ -940,6 +1043,7 @@
       ui.ranking.classList.add("hidden");
       resetGame();
       ui.nameInput.value="";
+      ui.classInput.value="";
       ui.start.classList.remove("hidden");
       gameState="start";
       setTimeout(()=>ui.nameInput.focus(),50);
