@@ -1,0 +1,20 @@
+{
+  "name": "Super Muzik Tahun 4, 5 & 6",
+  "short_name": "Super Muzik",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#eaf9ff",
+  "theme_color": "#0b75d1",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
